@@ -25,6 +25,7 @@ O degree-sync foi concebido para resolver a falta de tempo de estudantes que con
 
 ## Estrutura do Projeto
 
+```bash
 degree-sync/
 ├── .devcontainer/     # Configurações do ambiente de desenvolvimento isolado
 ├── docs/               # Documentação técnica e especificações
@@ -36,6 +37,7 @@ degree-sync/
 │   └── notify/         # Sistema de mensageria e notificações
 ├── docker-compose.yml  # Orquestração dos serviços locais
 └── pyproject.toml      # Configurações do projeto e dependências (uv)
+```
 
 ## Configuração do Ambiente
 
