@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 *.png
 .DS_Store
+session_state.json
+chrome_profile/

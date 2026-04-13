@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from src.scraper.ava_client import AVALoginClient
 
 logging.basicConfig(
@@ -8,14 +9,25 @@ logging.basicConfig(
 )
 
 async def main():
-    # Headless = False pode ser usado localmente para vermos o navegador caso precise depurar.
-    # Como estamos num dev container, manteremos headless=True.
-    async with AVALoginClient(headless=True) as client:
+    headless = os.getenv("HEADLESS", "false").strip().lower() in {"1", "true", "yes"}
+    manual_login_timeout = int(os.getenv("MANUAL_LOGIN_TIMEOUT", "300"))
+
+    client = AVALoginClient(
+        headless=headless,
+        manual_login_timeout=manual_login_timeout,
+    )
+    await client.start()
+
+    try:
         success = await client.login()
         if success:
-            print("Processo finalizado com sucesso!")
+            print("Login OK! Sessão salva. Navegador aberto para inspeção.")
+            print("Pressione Enter no terminal para encerrar...")
+            await asyncio.get_event_loop().run_in_executor(None, input)
         else:
-            print("Processo finalizado com falhas. Verifique os logs e prints.")
+            print("Falha no login. Verifique os logs e screenshots.")
+    finally:
+        await client.close()
 
 if __name__ == "__main__":
     asyncio.run(main())

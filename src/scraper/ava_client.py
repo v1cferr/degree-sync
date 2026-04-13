@@ -1,83 +1,154 @@
 import asyncio
 import logging
-from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+from pathlib import Path
+from playwright.async_api import async_playwright, BrowserContext, Page
 from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+PROFILE_DIR = Path("chrome_profile")
+
+
 class AVALoginClient:
-    def __init__(self, headless: bool = True):
+    def __init__(self, headless: bool = False, manual_login_timeout: int = 300):
         self.headless = headless
+        self.manual_login_timeout = manual_login_timeout
         self._playwright = None
-        self._browser: Browser | None = None
         self._context: BrowserContext | None = None
         self._page: Page | None = None
 
     async def start(self):
-        """Inicializa o navegador e abre um novo contexto."""
+        """Inicia o Chrome real com perfil persistente (cookies, cache, etc.)."""
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=self.headless)
-        self._context = await self._browser.new_context(
+        PROFILE_DIR.mkdir(exist_ok=True)
+
+        self._context = await self._playwright.chromium.launch_persistent_context(
+            user_data_dir=str(PROFILE_DIR),
+            channel="chrome",
+            headless=self.headless,
             viewport={"width": 1280, "height": 720},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            args=[
+                "--disable-blink-features=AutomationControlled",
+            ],
         )
-        self._page = await self._context.new_page()
+        self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
+
+    async def _is_logged_in(self) -> bool:
+        """Verifica se já está logado tentando acessar o AVA diretamente."""
+        if not self._page:
+            return False
+        try:
+            await self._page.goto("https://ava2.uniasselvi.com.br/home", timeout=30000)
+            await self._page.wait_for_load_state("domcontentloaded")
+            await asyncio.sleep(3)
+            url = self._page.url
+            logged = "ava2.uniasselvi.com.br" in url and "identificacao" not in url
+            if logged:
+                logger.info("Sessão anterior ainda válida — já logado em %s", url)
+            return logged
+        except Exception:
+            return False
 
     async def login(self) -> bool:
-        """Realiza o processo de login no AVA da Uniasselvi."""
+        """Realiza login no AVA.
+
+        Tenta restaurar sessão salva primeiro. Se não funcionar, faz login
+        normalmente (com suporte a resolução manual de CAPTCHA).
+        Após login bem-sucedido, salva a sessão para reuso.
+        """
         if not self._page:
             raise RuntimeError("O cliente deve ser iniciado com start() antes do login.")
 
+        # Tenta sessão do perfil persistente
+        if await self._is_logged_in():
+            return True
+        logger.info("Sessão não encontrada ou expirada. Fazendo login...")
+
         login_url = "https://areasegura.uniasselvi.com.br/identificacao"
-        
+
         try:
             logger.info("Acessando a página de login do AVA...")
             await self._page.goto(login_url)
+            await self._page.wait_for_load_state("domcontentloaded")
+            await asyncio.sleep(3)
 
-            # Preencher o CPF (usuário)
-            logger.info("Preenchendo credenciais...")
-            # Encontraremos os campos pelo placeholder ou ID/Name (vamos usar placeholder/texto primeiro, ou seletor de input text)
-            # Como não vimos a tela, vamos tentar seletores genéricos ou aguardar que a página carregue.
-            
-            # The input for CPF usually has some name="login" or placeholder="CPF"
-            await self._page.wait_for_selector("input[type='text'], input[placeholder*='CPF'], input[name*='login']")
-            inputs = await self._page.locator("input[type='text'], input[type='tel'], input[placeholder*='CPF']").all()
-            if inputs:
-                await inputs[0].fill(settings.ava_user)
-            
-            # Senha
-            password_inputs = await self._page.locator("input[type='password']").all()
-            if password_inputs:
-                await password_inputs[0].fill(settings.ava_pass)
+            logger.info("Preenchendo credenciais (quando os campos estiverem disponíveis)...")
+            fields_ready = await self._page.locator(
+                "input[type='password'], input[name*='cpf' i], input[placeholder*='CPF' i], input[name*='login' i]"
+            ).count()
 
-            # Clicar no botão de submeter (Entrar / Log in)
-            logger.info("Efetuando login...")
-            await self._page.locator("button[type='submit'], input[type='submit'], button:has-text('Entrar'), button:has-text('Acessar')").first.click()
+            if fields_ready:
+                user_field = self._page.locator(
+                    "input[name*='cpf' i], input[placeholder*='CPF' i], input[name*='login' i], input[type='text'], input[type='tel']"
+                ).first
+                await user_field.fill(settings.ava_user)
 
-            # Aguardar o login concluir - uma forma genérica é esperar a navegação ou esperar algum elemento do dashboard carregar
-            # Como não sabemos o que tem no dashboard, vamos aguardar pela network idle ou URL mudar
-            await self._page.wait_for_load_state("networkidle")
-            
+                password_field = self._page.locator("input[type='password']").first
+                await password_field.fill(settings.ava_pass)
+
+                logger.info("Tentando enviar formulário de login...")
+                await self._page.locator(
+                    "button[type='submit'], input[type='submit'], button:has-text('Entrar'), button:has-text('Acessar')"
+                ).first.click()
+            else:
+                logger.warning(
+                    "Campos de login não apareceram automaticamente. "
+                    "Faça o login manualmente na janela do navegador."
+                )
+
+            await self._wait_until_ava_home()
+
             current_url = self._page.url
             if "identificacao" in current_url:
-                logger.error("Falha no login: A URL não mudou ou retornou erro de credenciais.")
+                logger.error("Falha no login: ainda na página de identificação.")
                 await self._page.screenshot(path="login_error.png")
                 return False
-                
-            logger.info(f"Login bem-sucedido! URL atual: {current_url}")
+
+            # Perfil persistente salva estado automaticamente ao fechar
+            logger.info("Login bem-sucedido! URL atual: %s", current_url)
             await self._page.screenshot(path="login_success.png")
             return True
 
         except Exception as e:
-            logger.error(f"Ocorreu um erro durante o login: {e}")
+            logger.error("Ocorreu um erro durante o login: %s", e)
             if self._page:
                 await self._page.screenshot(path="login_exception.png")
             return False
 
+    async def _wait_until_ava_home(self) -> None:
+        """Aguarda até a URL ser do AVA home ou timeout (para login manual/CAPTCHA)."""
+        if not self._page:
+            return
+
+        def _is_at_ava(url: str) -> bool:
+            return "ava2.uniasselvi.com.br" in url and "identificacao" not in url
+
+        if _is_at_ava(self._page.url):
+            return
+
+        logger.warning(
+            "Aguardando login completo (resolva CAPTCHA/desafio se necessário). "
+            "Timeout: %ds", self.manual_login_timeout
+        )
+
+        waited = 0
+        interval = 2
+        while waited < self.manual_login_timeout:
+            if _is_at_ava(self._page.url):
+                logger.info("Redirecionado para o AVA com sucesso.")
+                return
+
+            await asyncio.sleep(interval)
+            waited += interval
+
+        raise TimeoutError(
+            "Tempo esgotado aguardando chegar ao AVA. Resolva o desafio e tente novamente."
+        )
+
     async def close(self):
-        """Encerra a sessão do navegador e Playwright."""
-        if self._browser:
-            await self._browser.close()
+        """Encerra o contexto persistente e o Playwright."""
+        if self._context:
+            await self._context.close()
         if self._playwright:
             await self._playwright.stop()
 
