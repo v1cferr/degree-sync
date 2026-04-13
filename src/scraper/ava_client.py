@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import json
+import random
 from pathlib import Path
 from playwright.async_api import async_playwright, BrowserContext, Page
 from src.config.settings import settings
@@ -88,25 +89,30 @@ class AVALoginClient:
             
             try:
                 await user_field.wait_for(state="visible", timeout=10000)
+                await asyncio.sleep(random.uniform(0.5, 1.5))
                 await user_field.fill(settings.ava_user)
                 logger.info("CPF preenchido.")
                 
                 btn_continuar = self._page.locator("button:has-text('CONTINUAR'), button:has-text('Continuar')").first
                 if await btn_continuar.is_visible():
+                    await asyncio.sleep(random.uniform(1.0, 2.5))
                     await btn_continuar.click()
                     logger.info("Clicou em CONTINUAR.")
                 
                 logger.info("Aguardando campo de senha...")
                 password_field = self._page.locator("input[type='password']").first
                 await password_field.wait_for(state="visible", timeout=10000)
+                await asyncio.sleep(random.uniform(0.5, 1.5))
                 await password_field.fill(settings.ava_pass)
                 logger.info("Senha preenchida.")
                 
                 btn_acessar = self._page.locator("button:has-text('ACESSAR'), button:has-text('Acessar')").first
                 if await btn_acessar.is_visible():
+                    await asyncio.sleep(random.uniform(1.0, 2.5))
                     await btn_acessar.click()
                     logger.info("Clicou em ACESSAR.")
                 else:
+                    await asyncio.sleep(random.uniform(0.5, 1.5))
                     await password_field.press("Enter")
                     logger.info("Pressionou Enter na senha.")
 
@@ -185,6 +191,7 @@ class AVALoginClient:
             if await radios.count() > 0 and await radios.first.is_visible():
                 if not await radios.first.is_checked():
                     logger.info("Selecionando o curso (radio button)...")
+                    await asyncio.sleep(random.uniform(1.0, 2.5))
                     await radios.first.check()
                     await asyncio.sleep(1)
             
@@ -192,6 +199,7 @@ class AVALoginClient:
             cards = self._page.locator(".curso, .card, [class*='course']")
             if await cards.count() > 0 and await cards.first.is_visible():
                 logger.info("Clicando no primeiro card de curso...")
+                await asyncio.sleep(random.uniform(1.0, 2.5))
                 await cards.first.click()
                 await asyncio.sleep(1)
         except Exception as e:
@@ -218,6 +226,7 @@ class AVALoginClient:
             if await locator.count() > 0 and await locator.is_visible():
                 try:
                     logger.info("Clicando em botão de continuidade: %s", selector)
+                    await asyncio.sleep(random.uniform(1.0, 2.5))
                     await locator.click(timeout=2000)
                     await self._page.wait_for_load_state("domcontentloaded")
                     return
