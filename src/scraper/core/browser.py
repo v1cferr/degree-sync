@@ -1,12 +1,13 @@
 import logging
 import json
+import os
 from pathlib import Path
 from playwright.async_api import async_playwright, BrowserContext, Page
 
 logger = logging.getLogger(__name__)
 
-PROFILE_DIR = Path("chrome_profile")
-STATE_FILE = Path("state.json")
+PROFILE_DIR = Path(os.getenv("AVA_PROFILE_DIR", "chrome_profile"))
+STATE_FILE = Path(os.getenv("AVA_STATE_FILE", "state.json"))
 
 class BrowserManager:
     def __init__(self, headless: bool = False):
@@ -25,11 +26,14 @@ class BrowserManager:
 
     async def start(self) -> Page:
         """Inicia o Playwright, lidando com perfis e injeção de cookies persistentes."""
+        self._profile_dir = Path(os.getenv("AVA_PROFILE_DIR", "chrome_profile"))
+        self._state_file = Path(os.getenv("AVA_STATE_FILE", "state.json"))
+        
         self._playwright = await async_playwright().start()
-        PROFILE_DIR.mkdir(exist_ok=True)
+        self._profile_dir.mkdir(exist_ok=True)
 
         self._context = await self._playwright.chromium.launch_persistent_context(
-            user_data_dir=str(PROFILE_DIR),
+            user_data_dir=str(self._profile_dir),
             headless=self.headless,
             viewport={"width": 1280, "height": 720},
             args=[
@@ -37,9 +41,9 @@ class BrowserManager:
             ],
         )
 
-        if STATE_FILE.exists():
+        if self._state_file.exists():
             try:
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
+                with open(self._state_file, "r", encoding="utf-8") as f:
                     state = json.load(f)
                     if "cookies" in state:
                         await self._context.add_cookies(state["cookies"])
@@ -54,7 +58,7 @@ class BrowserManager:
         """Força o despejo dos cookies para uso posterior."""
         if not self._context:
             return
-        await self._context.storage_state(path=STATE_FILE)
+        await self._context.storage_state(path=str(self._state_file))
         logger.debug("Sessão salva no disco.")
 
     async def close(self):
