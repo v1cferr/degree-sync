@@ -21,7 +21,9 @@ async def main():
     try:
         success = await client.login()
         if success:
-            print("Login OK! Sessão salva.")
+            print("Login OK ou sessão válida! Verificando popups da Home...")
+            await client.dismiss_home_popups()
+            print("Tudo limpo na Home! Pronto para os próximos passos.")
 
         else:
             print("Falha no login. Verifique os logs e screenshots.")

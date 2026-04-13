@@ -243,6 +243,47 @@ class AVALoginClient:
             # Durante desafio/captcha essa navegacao pode falhar e sera tentada novamente.
             pass
 
+    async def dismiss_home_popups(self) -> None:
+        """Fecha eventuais popups, modais promocionais ou de avisos estruturais da tela inicial."""
+        if not self._page:
+            return
+
+        logger.info("Aguardando carregamento de possíveis popups da Home...")
+        await asyncio.sleep(random.uniform(2.5, 4.0)) # Popups costumam ter animações de entrada
+        
+        selectors = [
+            "button:has-text('✕')",
+            "button:has-text('X')",
+            "button:has-text('Fechar')",
+            "a:has-text('Fechar')",
+            "button:has-text('FECHAR')",
+            "a:has-text('FECHAR')",
+            "[aria-label*='Fechar' i]",
+            ".close",
+            ".btn-close",
+            "button[class*='close' i]",
+            "button[id*='fechar' i]"
+        ]
+
+        closed_any = True
+        attempts = 0
+        while closed_any and attempts < 10:
+            closed_any = False
+            attempts += 1
+            
+            for selector in selectors:
+                try:
+                    locator = self._page.locator(selector).first
+                    if await locator.count() > 0 and await locator.is_visible():
+                        logger.info("Popup detectado e visível. Fechando... (%s)", selector)
+                        await asyncio.sleep(random.uniform(0.5, 1.5))
+                        await locator.click(timeout=3000)
+                        closed_any = True
+                        await asyncio.sleep(random.uniform(1.0, 2.0))  # aguarda animação de saída/entrada do póximo
+                        break  # sai do for e começa o while novamente em busca de mais popups
+                except Exception:
+                    continue
+
     async def close(self):
         """Encerra o contexto persistente e o Playwright."""
         if self._context:
