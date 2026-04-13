@@ -24,7 +24,6 @@ class AVALoginClient:
 
         self._context = await self._playwright.chromium.launch_persistent_context(
             user_data_dir=str(PROFILE_DIR),
-            channel="chrome",
             headless=self.headless,
             viewport={"width": 1280, "height": 720},
             args=[
@@ -72,28 +71,37 @@ class AVALoginClient:
             await self._page.wait_for_load_state("domcontentloaded")
             await asyncio.sleep(3)
 
-            logger.info("Preenchendo credenciais (quando os campos estiverem disponíveis)...")
-            fields_ready = await self._page.locator(
-                "input[type='password'], input[name*='cpf' i], input[placeholder*='CPF' i], input[name*='login' i]"
-            ).count()
-
-            if fields_ready:
-                user_field = self._page.locator(
-                    "input[name*='cpf' i], input[placeholder*='CPF' i], input[name*='login' i], input[type='text'], input[type='tel']"
-                ).first
+            logger.info("Aguardando campo de usuário...")
+            user_field = self._page.locator("input[name*='cpf' i], input[placeholder*='CPF' i], input[name*='login' i], input[type='text'], input[type='tel']").first
+            
+            try:
+                await user_field.wait_for(state="visible", timeout=10000)
                 await user_field.fill(settings.ava_user)
-
+                logger.info("CPF preenchido.")
+                
+                btn_continuar = self._page.locator("button:has-text('CONTINUAR'), button:has-text('Continuar')").first
+                if await btn_continuar.is_visible():
+                    await btn_continuar.click()
+                    logger.info("Clicou em CONTINUAR.")
+                
+                logger.info("Aguardando campo de senha...")
                 password_field = self._page.locator("input[type='password']").first
+                await password_field.wait_for(state="visible", timeout=10000)
                 await password_field.fill(settings.ava_pass)
+                logger.info("Senha preenchida.")
+                
+                btn_acessar = self._page.locator("button:has-text('ACESSAR'), button:has-text('Acessar')").first
+                if await btn_acessar.is_visible():
+                    await btn_acessar.click()
+                    logger.info("Clicou em ACESSAR.")
+                else:
+                    await password_field.press("Enter")
+                    logger.info("Pressionou Enter na senha.")
 
-                logger.info("Tentando enviar formulário de login...")
-                await self._page.locator(
-                    "button[type='submit'], input[type='submit'], button:has-text('Entrar'), button:has-text('Acessar')"
-                ).first.click()
-            else:
+            except Exception as e:
                 logger.warning(
-                    "Campos de login não apareceram automaticamente. "
-                    "Faça o login manualmente na janela do navegador."
+                    f"Fluxo automático falhou ou os campos não apareceram. Erro: {e}. "
+                    "Aguardando resolução manual/CAPTCHA."
                 )
 
             await self._wait_until_ava_home()
@@ -157,7 +165,27 @@ class AVALoginClient:
         if not self._page:
             return
 
+        try:
+            # Tenta encontrar e selecionar o curso se for um radio button
+            radios = self._page.locator("input[type='radio']")
+            if await radios.count() > 0 and await radios.first.is_visible():
+                if not await radios.first.is_checked():
+                    logger.info("Selecionando o curso (radio button)...")
+                    await radios.first.check()
+                    await asyncio.sleep(1)
+            
+            # Tenta encontrar e selecionar se for um card/bloco clicável genérico de curso
+            cards = self._page.locator(".curso, .card, [class*='course']")
+            if await cards.count() > 0 and await cards.first.is_visible():
+                logger.info("Clicando no primeiro card de curso...")
+                await cards.first.click()
+                await asyncio.sleep(1)
+        except Exception as e:
+            pass
+
         selectors = [
+            "button:has-text('Entrar')",
+            "a:has-text('Entrar')",
             "button:has-text('Continuar')",
             "a:has-text('Continuar')",
             "button:has-text('Prosseguir')",
@@ -168,6 +196,7 @@ class AVALoginClient:
             "a:has-text('Ir para o AVA')",
             "button:has-text('AVA')",
             "a:has-text('AVA')",
+            "a:has-text('Acessar Ambiente')",
         ]
 
         for selector in selectors:
