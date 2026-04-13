@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from src.scraper.ava_client import AVALoginClient
+from src.scraper.providers.uniasselvi.client import UniasselviClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -12,7 +12,7 @@ async def main():
     headless = os.getenv("HEADLESS", "false").strip().lower() in {"1", "true", "yes"}
     manual_login_timeout = int(os.getenv("MANUAL_LOGIN_TIMEOUT", "300"))
 
-    client = AVALoginClient(
+    client = UniasselviClient(
         headless=headless,
         manual_login_timeout=manual_login_timeout,
     )
