@@ -18,7 +18,6 @@ def isolated_browser_state(tmp_path_factory):
     
     os.environ["AVA_PROFILE_DIR"] = str(tmp_env / "test_profile")
     os.environ["AVA_STATE_FILE"]  = str(tmp_env / "test_state.json")
-    os.environ["HEADLESS"] = "true"
     os.environ["MANUAL_LOGIN_TIMEOUT"] = "120"
 
     yield tmp_env

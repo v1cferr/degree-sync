@@ -18,6 +18,8 @@ extraPaths = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 pythonpath = ["."]
+markers = ["e2e: testes end-to-end contra o site real (requerem HEADLESS=false)"]
+addopts = "-m 'not e2e'"
 
 [dependency-groups]
 dev = [

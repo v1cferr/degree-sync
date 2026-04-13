@@ -1,6 +1,16 @@
+"""
+Teste E2E real contra o site da Uniasselvi.
+
+⚠️  ATENÇÃO: Este teste NÃO roda em headless porque o Cloudflare Turnstile bloqueia.
+    Execute com:  pytest tests/test_uniasselvi_client.py -v -s -m e2e
+    E certifique-se de que HEADLESS=false no .env ou na variável de ambiente.
+"""
 import pytest
 import os
 from src.scraper.providers.uniasselvi.client import UniasselviClient
+
+pytestmark = pytest.mark.e2e
+
 
 @pytest.mark.asyncio
 async def test_full_login_and_dismiss_flow():
@@ -14,7 +24,7 @@ async def test_full_login_and_dismiss_flow():
     assert os.getenv("AVA_PASS"), "Credencial AVA_PASS não encontrada no .env para o teste E2E."
 
     # 1. Flow Inédito sem Cache 
-    client = UniasselviClient(headless=True)
+    client = UniasselviClient(headless=False)
     await client.start()
     
     try:
@@ -29,7 +39,7 @@ async def test_full_login_and_dismiss_flow():
         await client.close()
 
     # 2. Flow via Restauração de Sessão
-    client_cached = UniasselviClient(headless=True)
+    client_cached = UniasselviClient(headless=False)
     await client_cached.start()
     
     try:
