@@ -21,9 +21,8 @@ async def main():
     try:
         success = await client.login()
         if success:
-            print("Login OK! Sessão salva. Navegador aberto para inspeção.")
-            print("Pressione Enter no terminal para encerrar...")
-            await asyncio.get_event_loop().run_in_executor(None, input)
+            print("Login OK! Sessão salva.")
+
         else:
             print("Falha no login. Verifique os logs e screenshots.")
     finally:

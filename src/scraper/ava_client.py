@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import json
 from pathlib import Path
 from playwright.async_api import async_playwright, BrowserContext, Page
 from src.config.settings import settings
@@ -7,6 +8,7 @@ from src.config.settings import settings
 logger = logging.getLogger(__name__)
 
 PROFILE_DIR = Path("chrome_profile")
+STATE_FILE = Path("state.json")
 
 
 class AVALoginClient:
@@ -30,6 +32,16 @@ class AVALoginClient:
                 "--disable-blink-features=AutomationControlled",
             ],
         )
+        if STATE_FILE.exists():
+            try:
+                with open(STATE_FILE, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                    if "cookies" in state:
+                        await self._context.add_cookies(state["cookies"])
+                        logger.info("Cookies de sessão restaurados.")
+            except Exception as e:
+                logger.warning("Falha ao restaurar state.json: %s", e)
+
         self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
 
     async def _is_logged_in(self) -> bool:
@@ -112,7 +124,9 @@ class AVALoginClient:
                 await self._page.screenshot(path="login_error.png")
                 return False
 
-            # Perfil persistente salva estado automaticamente ao fechar
+            # Perfil persistente salva estado automaticamente ao fechar, 
+            # mas forçamos o dump dos cookies de sessão
+            await self._context.storage_state(path=STATE_FILE)
             logger.info("Login bem-sucedido! URL atual: %s", current_url)
             await self._page.screenshot(path="login_success.png")
             return True
