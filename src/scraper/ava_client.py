@@ -133,10 +133,18 @@ class AVALoginClient:
 
         waited = 0
         interval = 2
+        next_navigate_try = 0
         while waited < self.manual_login_timeout:
             if _is_at_ava(self._page.url):
                 logger.info("Redirecionado para o AVA com sucesso.")
                 return
+
+            await self._try_click_continue()
+
+            # Fallback: em alguns fluxos o portal autentica, mas nao redireciona automaticamente.
+            if waited >= next_navigate_try:
+                await self._try_go_to_ava_home()
+                next_navigate_try += 8
 
             await asyncio.sleep(interval)
             waited += interval
@@ -144,6 +152,44 @@ class AVALoginClient:
         raise TimeoutError(
             "Tempo esgotado aguardando chegar ao AVA. Resolva o desafio e tente novamente."
         )
+
+    async def _try_click_continue(self) -> None:
+        if not self._page:
+            return
+
+        selectors = [
+            "button:has-text('Continuar')",
+            "a:has-text('Continuar')",
+            "button:has-text('Prosseguir')",
+            "a:has-text('Prosseguir')",
+            "button:has-text('Acessar')",
+            "a:has-text('Acessar')",
+            "button:has-text('Ir para o AVA')",
+            "a:has-text('Ir para o AVA')",
+            "button:has-text('AVA')",
+            "a:has-text('AVA')",
+        ]
+
+        for selector in selectors:
+            locator = self._page.locator(selector).first
+            if await locator.count() > 0 and await locator.is_visible():
+                try:
+                    logger.info("Clicando em botão de continuidade: %s", selector)
+                    await locator.click(timeout=2000)
+                    await self._page.wait_for_load_state("domcontentloaded")
+                    return
+                except Exception:
+                    continue
+
+    async def _try_go_to_ava_home(self) -> None:
+        if not self._page:
+            return
+        try:
+            await self._page.goto("https://ava2.uniasselvi.com.br/home", timeout=8000)
+            await self._page.wait_for_load_state("domcontentloaded")
+        except Exception:
+            # Durante desafio/captcha essa navegacao pode falhar e sera tentada novamente.
+            pass
 
     async def close(self):
         """Encerra o contexto persistente e o Playwright."""
